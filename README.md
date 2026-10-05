@@ -1,2 +1,2 @@
 # ContextFlow
-ContextFlow is a RAG project that combines document retrieval, semantic search, embeddings, and LLMs to build an intelligent question-answering agent over custom knowledge sources.
+An AI agent that can research a question across a user's documents and external sources, decide which tools it needs, retrieve evidence, reason over it, and produce a cited report.

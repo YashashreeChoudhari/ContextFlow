@@ -1,9 +1,0 @@
-Python is a high-level programming language known for its
-simple syntax and readability.
-
-Python is commonly used for web development, data analysis,
-machine learning, automation, and scripting.
-
-RAG stands for Retrieval-Augmented Generation. RAG systems
-retrieve relevant information from a knowledge source and
-provide that information to a language model as context.

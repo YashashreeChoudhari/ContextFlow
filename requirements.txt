@@ -4,3 +4,4 @@ langchain-pinecone
 langchain-text-splitters
 python-dotenv
 pinecone
+openai

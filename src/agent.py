@@ -1,69 +1,93 @@
+
 import os
-import time
+import json
+from pathlib import Path
 
 from dotenv import load_dotenv
-from google import genai
+from openai import OpenAI
 
 from src.tools import rag_search
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_ROOT / ".env", override=True)
 
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+api_key = os.getenv("OPENROUTER_API_KEY")
 
-if not GOOGLE_API_KEY:
-    raise ValueError("GOOGLE_API_KEY is not set in .env")
+if not api_key:
+    raise ValueError("OPENROUTER_API_KEY is missing from .env")
 
-client = genai.Client(api_key=GOOGLE_API_KEY)
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=api_key,
+)
 
-def run_agent(question: str):
-    results = rag_search(question)
+MODEL = "openrouter/free"
 
-    if not results:
-        return "I could not find relevant information in the knowledge base."
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "rag_search",
+            "description": "Search the ContextFlow knowledge base for evidence relevant to a question.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "The question to search for."
+                    }
+                },
+                "required": ["question"],
+                "additionalProperties": False
+            }
+        }
+    }
+]
 
-    context = "\n\n".join(
-        result["content"]
-        for result in results
-    )
 
-    prompt = f"""
-You are ContextFlow, an AI research agent.
-
-Use the retrieved knowledge below to answer the user's question.
-
-Retrieved knowledge:
-{context}
-
-User question:
-{question}
-
-Give a clear and concise answer.
-Do not invent information.
-"""
-
-    max_attempts = 3
-
-    for attempt in range(1, max_attempts + 1):
-        try:
-            response = client.models.generate_content(
-                model="gemini-3.8-flash",
-                contents=prompt,
+def run_agent(question: str) -> str:
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are ContextFlow, a research assistant. "
+                "Use rag_search when the question requires the knowledge base. "
+                "Base answers on retrieved evidence and do not invent facts. "
+                "If the evidence is insufficient, say so."
             )
+        },
+        {"role": "user", "content": question}
+    ]
 
-            return response.text
+    for _ in range(5):
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            tools=tools,
+            tool_choice="required",
+        )
 
-        except Exception as error:
-            print(
-                f"\nGemini request failed "
-                f"(attempt {attempt}/{max_attempts})"
-            )
-            print(f"Error: {error}")
+        message = response.choices[0].message
+        messages.append(message)
 
-            if attempt < max_attempts:
-                print("Retrying in 20 seconds...")
-                time.sleep(20)
-            else:
-                raise
+        if not message.tool_calls:
+            return message.content or "No answer was returned."
+
+        for tool_call in message.tool_calls:
+            if tool_call.function.name != "rag_search":
+                continue
+
+            arguments = json.loads(tool_call.function.arguments)
+            results = rag_search(arguments["question"])
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": json.dumps(results, ensure_ascii=False)
+            })
+
+    return "I couldn't complete the request within the tool-call limit."
+
 
 if __name__ == "__main__":
     question = input("Ask ContextFlow: ").strip()
@@ -71,9 +95,8 @@ if __name__ == "__main__":
     if not question:
         raise SystemExit("Please enter a question.")
 
-    print("\nSearching knowledge base...")
-
-    answer = run_agent(question)
-
-    print("\nAnswer:\n")
-    print(answer)
+    try:
+        print("\nRunning ContextFlow agent...\n")
+        print(run_agent(question))
+    except Exception as error:
+        print(f"Agent error: {error}")
